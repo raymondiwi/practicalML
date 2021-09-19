@@ -1,30 +1,119 @@
 ---
 title: "PracticalML"
 author: "Raymond Wu"
-date: "9/15/2021"
+date: "9/19/2021"
 output: html_document
 ---
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 ```
+This is for practical machine learning course project. 
 
-## R Markdown
+## Background
 
-This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: <http://groupware.les.inf.puc-rio.br/har> (see the section on the Weight Lifting Exercise Dataset)
 
-When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+#### Data
+The training data for this project are available here: 
 
-```{r cars}
-summary(cars)
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+
+The test data are available here:
+
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+
+Data from <http://groupware.les.inf.puc-rio.br/har>. It's very generous allowing their data to be used for this project. 
+Source from : 
+Velloso, E.; Bulling, A.; Gellersen, H.; Ugulino, W.; Fuks, H. Qualitative Activity Recognition of Weight Lifting Exercises. Proceedings of 4th International Conference in Cooperation with SIGCHI (Augmented Human '13) . Stuttgart, Germany: ACM SIGCHI, 2013.
+
+#### Loading packages
+
+```{r message=FALSE}
+library(caret)
+library(randomForest)
+library(rpart)
+library(rpart.plot)
+library(rattle)
 ```
 
-## Including Plots
-
-You can also embed plots, for example:
-
-```{r pressure, echo=FALSE}
-plot(pressure)
+#### Setup working directory
+Download training and testing data to working directory
+```{r message=FALSE}
+setwd("C:/CourseProject")
+trainFileName <- "pml-training.csv"
+testFileName <- "pml-testing.csv"
 ```
 
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+#### Data cleansing
+Observed training and testing data file contains "NA" and blank in some data item. Some data items contains "#DIV/0!" in training data file. These are not desired items
+The first 7 columns are non-predictors 
+```{r message=FALSE}
+trainSource <- read.csv(trainFileName, na.strings=c("NA","","#DIV/0!"))
+testSource <- read.csv(testFileName, na.strings=c("NA","","#DIV/0!"))
+trainData <- trainSource[, colSums(is.na(trainSource)) == 0]
+testData <- testSource[, colSums(is.na(testSource)) == 0]
+trainData <- trainData[, -c(1:7)]
+testData <- testData[, -c(1:7)]
+dim(trainData)
+dim(testData)
+```
+
+#### Try to remove zero covariates in training data
+```{r message=FALSE}
+NZV <- nearZeroVar(trainData[,-ncol(trainData)],saveMetrics = TRUE)
+```
+Verify the result
+```{r message=FALSE}
+NZV
+```
+These are features after cleansing training data
+```{r message=FALSE}
+rownames(NZV)
+```
+
+## Partitioning training data to train set/ test set
+```{r message=FALSE}
+set.seed(1235)
+inTrain <- createDataPartition(trainData$classe, p = 0.75, list = FALSE)
+inTraining <- trainData[inTrain, ]
+inTesting <- trainData[-inTrain, ]
+dim(inTraining)
+dim(inTesting)
+```
+## Random forest model
+#### choosing 4-fold cross validation 
+```{r message=FALSE}
+trCtrRF <- trainControl(method="cv", number = 4)
+modelRF <- train(classe ~., data = inTraining, method = "rf", metric = "Accuracy", trControl=trCtrRF )
+
+modelRF$finalModel
+
+predictRF <- predict(modelRF , newdata = inTesting)
+
+cmRF <- confusionMatrix(predictRF, as.factor(inTesting$classe))
+cmRF
+
+varImp(modelRF)
+```
+- Accuracy rate is very high. it is 0.9929, which means out-of-sample-error is 0.0071 or 0.71%  
+
+## Decision tree model
+```{r message=FALSE}
+set.seed(1235) 
+modelDT <- rpart(classe ~., data =inTraining, method="class" )
+fancyRpartPlot(modelDT)
+predictDT <- predict(modelDT, inTesting, type= "class")
+cmDT <- confusionMatrix(predictDT, as.factor(inTesting$classe))
+cmDT 
+```
+- Accuracy rate is 0.7382, which means out-of-sample-error is 0.2618 or 26.18% 
+
+## Choose model to predict test data
+
+Random forest is the one to predict test data since it shows better accuracy
+
+```{r message=FALSE}
+preditQuiz <- predict(modelRF, newdata = testData)
+preditQuiz
+```
